@@ -1,0 +1,33 @@
+# ── Stage 1: build ────────────────────────────────────────────────────────────
+FROM node:22 AS builder
+
+WORKDIR /app
+
+COPY app/package*.json ./
+RUN npm ci
+
+COPY app/ .
+RUN npm run build
+
+# ── Stage 2: run (non-root user) ───────────────────────────────────────────────
+FROM node:22
+
+LABEL org.opencontainers.image.description="Workshop image: runs as 'node' user. CVE-2025-55182 RCE is still exploitable but attacker lands as uid=1000, not root."
+
+WORKDIR /app
+
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static     ./.next/static
+COPY --from=builder /app/public           ./public
+
+EXPOSE 3000
+
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+
+# node:22 ships with a built-in 'node' user (uid 1000).
+# The attacker can still explore the filesystem, run bash, curl, wget —
+# but cannot escalate to root, write to /etc, or install system packages.
+USER node
+
+CMD ["node", "server.js"]

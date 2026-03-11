@@ -1,0 +1,33 @@
+# ── Stage 1: build ────────────────────────────────────────────────────────────
+FROM node:22 AS builder
+
+WORKDIR /app
+
+COPY app/package*.json ./
+RUN npm ci
+
+COPY app/ .
+RUN npm run build
+
+# ── Stage 2: run (distroless — minimal runtime, non-root) ─────────────────────
+FROM gcr.io/distroless/nodejs22-debian12
+
+LABEL org.opencontainers.image.description="Workshop image: distroless, non-root. CVE-2025-55182 RCE still executes — but there is no shell, no curl, no package manager. Post-exploitation is a dead end."
+
+WORKDIR /app
+
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static     ./.next/static
+COPY --from=builder /app/public           ./public
+
+EXPOSE 3000
+
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+
+# distroless ships a 'nonroot' user at uid 65532.
+# The image contains only the Node.js runtime and glibc — no shell (/bin/sh),
+# no curl, no wget, no apt, no ls, no cat, no id.
+USER nonroot
+
+CMD ["server.js"]
