@@ -25,10 +25,3 @@ mounts:
   # Writable scratch space (ext4, no nosuid — required for the setuid-demo).
   - location: "/tmp/lima"
     writable: true
-
-
-# Install NIX: 
-
-# sh <(curl --proto '=https' --tlsv1.2 -L https://nixos.org/nix/install) --no-daemon
-# sudo mkdir -p /etc/nix
-# echo 'experimental-features = nix-command flakes' | sudo tee -a /etc/nix/nix.conf
