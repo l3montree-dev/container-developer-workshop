@@ -1,0 +1,5 @@
+FROM alpine:3.21
+
+RUN echo "Hello, OCI World!" > /hello.txt
+
+CMD ["cat", "/hello.txt"]

@@ -1,0 +1,10 @@
+FROM alpine:3.21
+
+# BAD: secrets in ENV are baked into the image manifest
+# They will appear in plain text in the image config JSON
+ENV DB_PASSWORD=super_secret_password_123
+ENV API_KEY=sk-prod-abc123xyz789
+
+RUN echo "app started" > /app.txt
+
+CMD ["cat", "/app.txt"]

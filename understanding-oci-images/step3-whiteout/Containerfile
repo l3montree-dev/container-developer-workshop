@@ -1,0 +1,11 @@
+FROM alpine:3.21
+
+# Layer 1: install curl (adds files to filesystem)
+RUN apk add --no-cache curl
+
+# Layer 2: try to "clean up" in a separate layer
+# This creates whiteout files (e.g. .wh.apk) in the new layer —
+# the files from layer 1 are STILL there in the image tar!
+RUN rm -rf /var/cache/apk /usr/share/doc /usr/share/man
+
+CMD ["curl", "--version"]

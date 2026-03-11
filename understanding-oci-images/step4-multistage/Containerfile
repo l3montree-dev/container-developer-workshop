@@ -1,0 +1,16 @@
+FROM alpine:3.21 AS builder
+
+# Build stage: install tools, compile, generate artifacts
+RUN apk add --no-cache gcc musl-dev
+
+# A trivial C program to demonstrate the concept
+RUN printf '#include <stdio.h>\nint main(){puts("Hello from a minimal image!");return 0;}' > /app.c \
+    && gcc -static -o /app /app.c
+
+# ── final stage ──────────────────────────────────────────────────────────────
+FROM scratch
+
+# Copy ONLY the compiled binary — no compiler, no libc, no build tools
+COPY --from=builder /app /app
+
+CMD ["/app"]

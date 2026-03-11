@@ -1,0 +1,8 @@
+FROM alpine:3.21
+
+# BETTER: install and clean up in a SINGLE RUN layer
+# Everything happens atomically — no whiteout files, no leftover cache
+RUN apk add --no-cache curl \
+    && rm -rf /var/cache/apk /usr/share/doc /usr/share/man
+
+CMD ["curl", "--version"]

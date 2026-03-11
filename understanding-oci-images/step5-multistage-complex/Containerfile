@@ -1,0 +1,25 @@
+FROM alpine:3.21 AS builder
+
+# Secrets used during build (e.g. to pull from a private registry or API)
+# These will appear in the builder image config — but NOT in the final image
+ENV BUILD_TOKEN=ghp_super_secret_build_token_abc123
+
+# Whiteout-polluted layers: install, then delete in a separate RUN
+RUN apk add --no-cache gcc musl-dev curl
+
+# Simulate fetching a private artifact using the build token
+RUN echo "Downloading artifact with token: $BUILD_TOKEN" \
+    && printf '#include <stdio.h>\nint main(){puts("Hello from a hardened image!");return 0;}' > /app.c \
+    && gcc -static -o /app /app.c
+
+# This rm creates whiteout files in the builder — they stay in the builder layers
+RUN rm -rf /var/cache/apk /usr/share /tmp/*
+
+# ── final stage ──────────────────────────────────────────────────────────────
+FROM scratch
+
+# Only the compiled binary crosses the stage boundary.
+# No ENV, no whiteout files, no build tools, no secrets.
+COPY --from=builder /app /app
+
+CMD ["/app"]
