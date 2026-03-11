@@ -11,10 +11,10 @@ docker save oci-demo:step2 -o ./tmp/step2.tar
 Crack open the image config:
 
 ```bash
-CONFIG=$(tar xf ./tmp/step2.tar manifest.json -O | jq -r '.[0].Config')
+CONFIG=$(tar xfO ./tmp/step2.tar manifest.json | jq -r '.[0].Config')
 
 echo "Config file: $CONFIG"
-tar xf ./tmp/step2.tar "$CONFIG" -O | jq '.config.Env'
+tar xfO ./tmp/step2.tar "$CONFIG" | jq '.config.Env'
 ```
 
 **The passwords are right there in plain text.** Every `ENV` you set during build is stored permanently in the image config — anyone who can pull the image can read them.
@@ -45,8 +45,8 @@ Now prove the secrets are gone:
 
 ```bash
 docker save oci-demo:step2-solution -o ./tmp/step2-solution.tar
-CONFIG=$(tar xf ./tmp/step2-solution.tar manifest.json -O | jq -r '.[0].Config')
-tar xf ./tmp/step2-solution.tar "$CONFIG" -O | jq '.config.Env'
+CONFIG=$(tar xfO ./tmp/step2-solution.tar manifest.json | jq -r '.[0].Config')
+tar xfO ./tmp/step2-solution.tar "$CONFIG" | jq '.config.Env'
 # → ["PATH=/usr/local/sbin:…"]   ← no secrets, just the default PATH
 ```
 

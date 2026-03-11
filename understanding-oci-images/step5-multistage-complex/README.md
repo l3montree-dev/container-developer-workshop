@@ -12,7 +12,7 @@ docker run --rm oci-demo:step5
 
 ```bash
 mkdir -p tmp/step5-inspect
-docker save oci-demo:step5 -o ./t
+docker save oci-demo:step5 -o ./tmp/step5.tar
 tar xf ./tmp/step5.tar -C ./tmp/step5-inspect
 
 cat tmp/step5-inspect/manifest.json | jq -r '.[0].Layers[]' | while read layer_path; do
