@@ -6,6 +6,7 @@ A hands-on workshop covering OCI image internals, container hardening, and Linux
 |---|---|
 | [`understanding-oci-images/`](understanding-oci-images/) | Layers, whiteouts, secrets, multi-stage builds |
 | [`container-hardening/`](container-hardening/) | RCE exploitation, root vs. non-root, distroless, read-only filesystems |
+| [`sbom-generation/`](sbom-generation/) | SBOM trust boundaries — ghost packages and phantom binaries |
 | [`linux-namespaces/`](linux-namespaces/) | How containers isolate processes at the kernel level |
 
 ---

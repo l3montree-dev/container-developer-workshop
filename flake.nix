@@ -74,6 +74,7 @@
             packages = [
               pkgs.docker-client
               pkgs.jq
+              pkgs.trivy
               pkgs.bun
               pkgs.netcat-gnu
               pkgs.gnutar

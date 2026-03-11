@@ -1,0 +1,49 @@
+FROM debian:12-slim
+
+# ── Layer 1: install real packages through apt ────────────────────────────────
+# curl + ca-certificates end up in /var/lib/dpkg/status — trivy finds them legitimately.
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Layer 2: inject a GHOST package into the dpkg database ────────────────────
+# Trivy (and every other scanner) trusts /var/lib/dpkg/status completely.
+# We craft a realistic entry for a package that was NEVER actually installed.
+# Its files are not on disk — only the metadata record exists.
+# Using a heredoc avoids all shell escaping issues and produces exact dpkg format.
+# Using a shell variable for Architecture so the entry matches the actual image
+# platform — Trivy skips entries where Architecture doesn't match.
+# The heredoc starts immediately with "Package:" (no leading blank line) because
+# the existing dpkg/status file already ends with one blank line; adding another
+# would create a double-blank-line separator which Trivy's stanza parser rejects.
+RUN ARCH=$(dpkg --print-architecture) && cat >> /var/lib/dpkg/status <<EOF
+Package: libssl1.1
+Status: install ok installed
+Priority: optional
+Section: libs
+Installed-Size: 4264
+Maintainer: Debian OpenSSL Team <pkg-openssl-devel@alioth-lists.debian.net>
+Architecture: ${ARCH}
+Multi-Arch: same
+Source: openssl
+Version: 1.1.1w-0+deb11u1
+Depends: libc6
+Description: Secure Sockets Layer toolkit - shared libraries
+ This package is part of the OpenSSL project.
+ This package is NOT actually installed. The dpkg record was injected
+ directly into /var/lib/dpkg/status to demonstrate that Trivy (and all
+ dpkg-based SBOM scanners) trust this file unconditionally.
+ The library files do not exist on disk.
+
+EOF
+
+# ── Layer 3: drop a binary that bypasses the package manager ──────────────────
+# Download a static jq binary directly from GitHub — no apt, no dpkg record.
+# jq is a C binary with no embedded module metadata, so Trivy cannot identify it
+# through any of its language-specific scanners.
+# Trivy will NOT include it in the SBOM.
+RUN curl -fsSL \
+    https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-amd64 \
+    -o /usr/local/bin/jq-static \
+    && chmod +x /usr/local/bin/jq-static
+
+CMD ["/bin/bash"]
