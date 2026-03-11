@@ -75,6 +75,7 @@
               pkgs.docker-client
               pkgs.jq
               pkgs.bun
+              pkgs.netcat-gnu
               pkgs.gnutar
               (chw { inherit pkgs; })
             ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
